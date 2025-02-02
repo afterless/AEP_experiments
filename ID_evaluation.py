@@ -19,35 +19,61 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.pad_token_id = tokenizer.eos_token_id
 tokenizer.padding_side = "left"
+alpha = 0.5 # steering strength
 
 # Define a hook generator to inject a steering vector at the given layer
-def get_hook(layer_idx, steer_vector):
+def get_hook(layer_idx, steer_vector, alpha):
     def hook(module, inputs, output):
         # steer_vector is of shape (hidden_size,)
-        v = steer_vector.to(output.device)
+        v = steer_vector.to(output[0].device)
         # Modify the hidden state of the LAST token only.
-        output[0][:, -1] += v
+        output[0][:, -1] += alpha*v
         return output
     return hook
 
 # Evaluation function: for a (small) benchmark dataset compute %
 # of generated answers that contain the answer_matching_behavior string.
-def evaluate_model(model, ds, tokenizer, max_new_tokens=50):
+def evaluate_model(model, ds, tokenizer, max_new_tokens=5):
     model.eval()
     total = len(ds)
-    match_count = 0
-    for item in tqdm(ds, desc="Evaluating", leave=False):
-        question = item["question"]
-        target = item["answer_matching_behavior"]
-        # Build prompt (without answer)
-        prompt = f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{question}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
-        input_ids = tokenizer(prompt, return_tensors="pt").to(model.device)
-        with torch.no_grad():
-            gen_ids = model.generate(input_ids, max_new_tokens=max_new_tokens)
-        gen_text = tokenizer.decode(gen_ids[0], skip_special_tokens=True)
-        # Here a simple check: does the generated text contain the target string?
-        if target.lower() in gen_text.lower():
-            match_count += 1
+    #match_count = 0
+    
+    # Instead of iterating over each item individually, use batch access from the dataset:
+    questions = ds["question"]
+    targets = [t.lower() for t in ds["answer_matching_behavior"]]
+
+    # Build prompts in a batched manner using a list comprehension:
+    prompts = [
+        f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n{q}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+        for q in questions
+    ]
+    # Tokenize all prompts together with padding/truncation
+    inputs = tokenizer(
+        prompts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        add_special_tokens=False
+    ).to(model.device)
+
+    # Generate outputs in batch
+    with torch.no_grad():
+        gen_ids = model.generate(
+            input_ids=inputs["input_ids"],
+            attention_mask=inputs["attention_mask"],
+            max_new_tokens=max_new_tokens,
+            do_sample=False,
+            use_cache=True
+        )
+
+    # Batch decode the generated outputs
+    gen_texts = tokenizer.batch_decode(gen_ids, skip_special_tokens=True)
+
+    # Check and count how many generated texts contain the target behavior string
+    match_count = sum(
+        1 for gen_text, target in zip(gen_texts, targets)
+        if target in gen_text.lower()
+    )
     # Return percentage of matches
     return (match_count / total) * 100
 
@@ -58,7 +84,7 @@ def main():
     # Load steering vectors from JSON file
     # Assuming the file is named using the format: model_name-behavior-split.json,
     # e.g., "Llama-3-8B-Instruct-corrigible-neutral-HHH-train.json"
-    sv_file = os.path.join(sv_dir, f"{model_name.split('/')[-1]}-{behavior}-train.json")
+    sv_file = "./steering_vectors/Llama-3-8B-Instruct-corrigible-neutral-HHH-0-0.1.json"
     if not os.path.exists(sv_file):
         raise FileNotFoundError(f"Steering vector file not found: {sv_file}")
 
@@ -76,7 +102,7 @@ def main():
         # Register hook at corresponding layer.
         # Note: steering_tensor was computed from layers[1:], so real layer index is (i+1).
         layer_idx = i + 1  
-        hook = get_hook(layer_idx, steering_tensor[i])
+        hook = get_hook(layer_idx, steering_tensor[i], alpha)
         handle = model.model.layers[layer_idx].register_forward_hook(hook)
         
         print(f"Evaluating steering at layer {layer_idx}...")

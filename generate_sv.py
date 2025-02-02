@@ -63,15 +63,6 @@ def compute_sv(pos_prompts, neg_prompts, tokenizer, model):
     
     return steering_vectors
 
-
-def get_mwe_subset(ds, start_id, end_id, file_name):
-    """
-    file_name: str - The name of the file in the dataset
-    """
-    text_slice = ds[file_name][start_id:end_id]["question"]  # Slices the 'train' split
-    return text_slice
-
-
 def write_steering_vectors_to_json(model_name, target_name, split, steering_vectors, output_dir="steering_vectors"):
     """
     Writes steering vectors to a JSON file with the naming format: model_name-target_name-split.json
