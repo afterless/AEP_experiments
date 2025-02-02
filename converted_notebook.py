@@ -4,7 +4,7 @@ import torch
 import json
 import os
 
-os.environ['HF_HOME'] = '/tmp/huggingface'
+os.environ['HF_HOME'] = '/tmp/huggingface' #remember to request tmp memory during salloc
 
 # %%
 model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
@@ -65,7 +65,6 @@ neg_p = "Act like you are really sad."  #"[INST] Act like you are really sad [/I
 contrastive_statements = [pos_p, neg_p]
 
 input_ids_contrastive = tokenizer(contrastive_statements, padding=True, return_tensors="pt").to("cuda")
-
 
 steering_vectors = []
 
