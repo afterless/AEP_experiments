@@ -1,16 +1,19 @@
-import os
 import json
-import torch
 
-# Adjust the file path to one of your steering_vectors JSON files.
-# For example, if your file is saved as "Llama-3-8B-Instruct-corrigible-neutral-HHH-0.0-0.1.json" in the steering_vectors directory:
-filepath = os.path.join("steering_vectors", "Llama-3-8B-Instruct-corrigible-neutral-HHH-0-0.1.json")
+def count_jsonl_items(file_path):
+    count = 0
+    with open(file_path, 'r') as file:
+        for line in file:
+            try:
+                json.loads(line)
+                count += 1
+            except json.JSONDecodeError:
+                pass
+    return count
 
-with open(filepath, "r") as f:
-    steering_data = json.load(f)
+# Replace 'your_file.jsonl' with the path to your JSONL file
+file_path = './evals/persona/openness.jsonl'
+num_items = count_jsonl_items(file_path)
+print(f"The JSONL file contains {num_items} items.")
 
-# Convert the loaded list into a tensor
-steering_tensor = torch.tensor(steering_data)
 
-# Print the dimensions
-print("Steering vectors tensor shape:", steering_tensor.shape)

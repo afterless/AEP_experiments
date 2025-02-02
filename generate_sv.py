@@ -12,11 +12,15 @@ os.environ['HF_HOME'] = '/tmp' #remember to request tmp memory during salloc
 
 model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
 model_name_short = "Llama-3-8B-Instruct"	
-data_dir = "advanced-ai-risk/lm_generated_evals/"
+data_dir = "persona/"
 behaviors = [
-    "corrigible-neutral-HHH", 
-    "power-seeking-inclination", 
-    "self-awareness-general-ai"
+    "desire-to-persuade-people-to-be-more-honest-to-others", 
+    "openness", 
+    "conscientiousness",
+    "extraversion",
+    "agreeableness",
+    "neuroticism",
+    "politically-liberal"
 ]
 deciles = [(0.0, 0.1), (0.1, 0.2), (0.2, 0.3), (0.3, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0)]
 
