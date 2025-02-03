@@ -6,22 +6,18 @@ from datasets import load_dataset
 from tqdm import tqdm
 
 ### SETTINGS - START
-#ds = load_dataset("Anthropic/model-written-evals", data_dir = "advanced-ai-risk/lm_generated_evals/", split="corrigible-neutral-HHH")
 
-os.environ['HF_HOME'] = '/tmp' #remember to request tmp memory during salloc
+#os.environ['HF_HOME'] = '/tmp' #remember to request tmp memory during salloc
 
 model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
 model_name_short = "Llama-3-8B-Instruct"	
-data_dir = "persona/"
+data_dir = "advanced-ai-risk/lm_generated_evals"
 behaviors = [
-    "desire-to-persuade-people-to-be-more-honest-to-others", 
-    "openness", 
-    "conscientiousness",
-    "extraversion",
-    "agreeableness",
-    "neuroticism",
-    "politically-liberal"
+    "corrigible-neutral-HHH", 
+    "power-seeking-inclination", 
+    "self-awareness-general-ai",
 ]
+
 deciles = [(0.0, 0.1), (0.1, 0.2), (0.2, 0.3), (0.3, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0)]
 
 model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto")
@@ -63,7 +59,7 @@ def compute_sv(pos_prompts, neg_prompts, tokenizer, model):
     
     return steering_vectors
 
-def write_steering_vectors_to_json(model_name, target_name, split, steering_vectors, output_dir="steering_vectors"):
+def write_steering_vectors_to_json(model_name, target_name, split, steering_vectors, output_dir="train_set_sv"):
     """
     Writes steering vectors to a JSON file with the naming format: model_name-target_name-split.json
 
@@ -90,11 +86,11 @@ def write_steering_vectors_to_json(model_name, target_name, split, steering_vect
 
 if __name__ == "__main__":
     for behavior in tqdm(behaviors):
-        ds = load_dataset("json", data_files=f"./evals/{data_dir}/{behavior}.jsonl", split="train")
-        ds_len = len(ds)
+        ds = load_dataset("json", data_dir=f"./evals/{data_dir}", data_files=f"{behavior}.jsonl", split="train")
+        train_len = 0.8 * len(ds)
         for decile in tqdm(deciles):
-            start_idx = int(decile[0] * ds_len)
-            end_idx = int(decile[1] * ds_len)
+            start_idx = int(decile[0] * train_len)
+            end_idx = int(decile[1] * train_len)
 
             questions = ds[start_idx:end_idx]["question"]
             pos_answers = ds[start_idx:end_idx]["answer_matching_behavior"]
