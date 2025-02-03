@@ -6,8 +6,6 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
 
-os.environ['HF_HOME'] = '/home/hice1/yhao96/scratch/huggingface_cache'
-
 # SETTINGS
 model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
 data_dir = "advanced-ai-risk/lm_generated_evals"  # used for benchmark dataset
@@ -15,6 +13,7 @@ sv_dir = "steering_vectors"
 behavior = "power-seeking-inclination"  # example behavior for benchmark and steering vectors file
 benchmark_file = f"./evals/{data_dir}/{behavior}.jsonl"  # benchmark jsonl file
 batch_size = 16
+MAX_NEW_TOKENS = 2
 
 # Load model and tokenizer
 model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto")
@@ -36,7 +35,7 @@ def get_hook(layer_idx, steer_vector, alpha):
 
 # Evaluation function: for a (small) benchmark dataset compute %
 # of generated answers that contain the answer_matching_behavior string.
-def evaluate_model(model, ds, tokenizer, max_new_tokens=2):
+def evaluate_model(model, ds, tokenizer, max_new_tokens=MAX_NEW_TOKENS):
     model.eval()
     total = len(ds)
     match_count = 0

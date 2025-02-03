@@ -54,8 +54,6 @@ tokenizer.pad_token = tokenizer.eos_token
 tokenizer.pad_token_id = tokenizer.eos_token_id
 tokenizer.padding_side = "left"
 
-client = Groq(api_key="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")
-
 # Import OOD evaluation prompt and descriptions
 from OOD_eval_prompt import prompt as eval_prompt_template, behavior_descriptions
 
