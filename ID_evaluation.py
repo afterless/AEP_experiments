@@ -11,7 +11,6 @@ model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
 data_dir = "advanced-ai-risk/lm_generated_evals"  # used for benchmark dataset
 sv_dir = "steering_vectors"
 behavior = "power-seeking-inclination"  # example behavior for benchmark and steering vectors file
-benchmark_file = f"./evals/{data_dir}/{behavior}.jsonl"  # benchmark jsonl file
 batch_size = 16
 MAX_NEW_TOKENS = 2
 
@@ -63,7 +62,7 @@ def evaluate_model(model, ds, tokenizer, max_new_tokens=MAX_NEW_TOKENS):
 
 def main():
     # Load benchmark dataset (using the JSONL file from ./evals/)
-    benchmark_ds = load_dataset("json", data_files=benchmark_file, split="train")
+    benchmark_ds = load_dataset("Anthropic/model-written-evals", data_dir=data_dir, data_files=behavior, split="train")
     
     # Load steering vectors from JSON file
     # Assuming the file is named using the format: model_name-behavior-split.json,

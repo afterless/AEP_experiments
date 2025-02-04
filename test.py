@@ -1,11 +1,4 @@
-import os
-import json
-import numpy as np
-from datasets import load_dataset
-DATA_DIR = "safety_features"
-behavior = "power-seeking-inclination"
-prompt_len = "short"
-os.environ['HF_HOME'] = '/tmp'
+from transformers import AutoModelForCausalLM
 
-ds = load_dataset("yixionghao/AEP_OOD_evaluation", data_dir=f"evaluation_data/{DATA_DIR}", data_files=f"{behavior}-{prompt_len}.json", split="train")
-print(ds)
+model = AutoModelForCausalLM.from_pretrained("meta-llama/Meta-Llama-3-8B-Instruct", torch_dtype=torch.bfloat16, device_map="auto")
+print(model.generateion_config)
