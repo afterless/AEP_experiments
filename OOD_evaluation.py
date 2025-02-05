@@ -21,36 +21,37 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
-from groq import Groq
 import time
 from datasets import Dataset
 from OOD_eval_prompt import prompt as eval_prompt_template, behavior_descriptions
 
 # ----------------- User-Specified Parameters and Hardcoded Variables -----------------
 # List of behaviors (each corresponds to a JSONL file in the evaluation directory)
-BEHAVIORS = ["openness"]
-STEERING_STRENGTHS = [0]
+BEHAVIORS = ["power-seeking-inclination"]
+STEERING_STRENGTHS = [-4, -3, -2, -1, 0, 1, 2, 3, 4]
 # List of dataset sizes indicating which evaluation dataset to use
 PROMPT_LENS = ["medium"]
 # List of steering layers (which layer to apply the steering vector on)
-STEERING_LAYERS = [16]
+STEERING_LAYERS = [15]
 # Fixed generation length for responses
 MAX_NEW_TOKENS = 160
+DO_SAMPLE = False
 
 # Model and dataset directories / endpoints
 MODEL_NAME = "meta-llama/Meta-Llama-3-8B-Instruct"
 EVAL_MODEL_NAME = "meta-llama/Meta-Llama-3-70B-Instruct"
-STEERING_VECTORS_DIR = "./complete_sv"
+STEERING_VECTORS_DIR = "./ActAdd_sv"
 EVAL_DATASET_DIR = "./evals/AEP_OOD_evaluation"  # Expected subdirectories: -short, -medium, -long
 RESULTS_DIR = "./OOD_eval_results"
-DATA_DIR = "practical_features"
+DATA_DIR = "safety_features"
 STEERED_RESPONSE_DIR = "./OOD_responses"
-NUM_PROC = 16
+NUM_PROC = 10
+USE_70B = False
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # MODEL
 model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.bfloat16, device_map="auto")
-eval_model = AutoModelForCausalLM.from_pretrained(EVAL_MODEL_NAME, torch_dtype=torch.bfloat16, device_map="auto")
+eval_model = AutoModelForCausalLM.from_pretrained(EVAL_MODEL_NAME, torch_dtype=torch.bfloat16, device_map="auto") if USE_70B else model
 #above two use same tokenizer!!!
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 tokenizer.pad_token = tokenizer.eos_token
@@ -81,12 +82,17 @@ def add_special_tokens(item):
 
 def make_prompt(item, behavior):
     description = behavior_descriptions.get(behavior, "No description available.")
-    return {"eval_prompt": tokenizer.apply_chat_template(eval_prompt_template.format(
+    prompt = eval_prompt_template.format(
         behavior=behavior,
         description=description,
         question=item["question"],
         answer=item["answer"]
-    ), add_generation_prompt=True)}
+    )
+    formatted_prompt = (
+        f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
+        f"{prompt}\n\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+    )
+    return {"eval_prompt": formatted_prompt}
 
 
 def generate_response(inputs, steering_layer, hook_fn=None):
@@ -105,7 +111,9 @@ def generate_response(inputs, steering_layer, hook_fn=None):
             attention_mask=inputs["attention_mask"],
             max_new_tokens=MAX_NEW_TOKENS,
             use_cache=True,
-            do_sample=True,
+            do_sample=DO_SAMPLE,
+            temperature=0.6 if DO_SAMPLE else None,
+            top_p=0.9 if DO_SAMPLE else None,
             pad_token_id=tokenizer.eos_token_id,
         )
     if hook_handle:
@@ -131,15 +139,18 @@ def generate_scores(prompts):
             max_new_tokens=8,
             use_cache=True,
             do_sample=False,
+            temperature=None,
+            top_p=None,
             pad_token_id=tokenizer.eos_token_id,
         )
 
     prompt_length = len(eval_input_ids[0])
     new_tokens = eval_gen_ids[..., prompt_length:]
     answers = tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
-    print(answers)
-    exit()
-    return answers
+    answers = [a[3:-1].split(", ") for a in answers]
+    behavior_scores = [int(a[0]) for a in answers]
+    coherence_scores = [int(a[1]) for a in answers]
+    return behavior_scores, coherence_scores
     
 
 def main():
@@ -183,17 +194,15 @@ def main():
                     })
 
                     # Save QA pairs to a JSON file with an identifiable name.
-                    #this is to manually inspect output
-                    qa_filepath = f"{STEERED_RESPONSE_DIR}/{behavior}-{prompt_len}-s={strength}-layer{steering_layer}.json"
-                    with open(qa_filepath, "w") as qa_file:
-                        json.dump(steered_qa.to_json(), qa_file, indent=4)
+                    # This is to manually inspect output
+                    steered_qa.to_json(f"{STEERED_RESPONSE_DIR}/{behavior}-{prompt_len}-s={strength}-layer{steering_layer}.json", indent=4, lines=False)
 
                     behavior_accum = []
                     coherency_accum = []
                     
-                    steered_qa.map(make_prompt, fn_kwargs={"behavior": behavior}, num_proc=NUM_PROC)
+                    steered_qa = steered_qa.map(make_prompt, fn_kwargs={"behavior": behavior}, num_proc=NUM_PROC)
                     behavior_accum, coherency_accum = generate_scores(steered_qa["eval_prompt"])
-                    
+
                     behavior_scores.append(sum(behavior_accum) / len(behavior_accum))
                     coherency_scores.append(sum(coherency_accum) / len(coherency_accum))
 
@@ -207,6 +216,21 @@ def main():
 
             print(behavior_scores)
             print(coherency_scores)
+
+            # Plot results
+            behavior_scores = [x/10 for x in behavior_scores]
+            coherency_scores = [x/10 for x in coherency_scores]
+            product = [x*y for x, y in zip(behavior_scores, coherency_scores)]
+
+            plt.plot(STEERING_STRENGTHS, behavior_scores, label='behavior')
+            plt.plot(STEERING_STRENGTHS, coherency_scores, label='coherence')
+            plt.plot(STEERING_STRENGTHS, product, label='bxh score')
+
+            plt.xlabel('Steering Strength')
+            plt.ylabel('Scores')
+            plt.title('Steering efffectiveness vs Steering Strength')
+            plt.legend()
+            plt.savefig('plot.png')
 
 
 if __name__ == "__main__":
