@@ -4,21 +4,23 @@ import json
 import os
 from datasets import load_dataset
 from tqdm import tqdm
+from torch.utils.data import DataLoader
 
 ### SETTINGS - START
 
 #os.environ['HF_HOME'] = '/tmp' #remember to request tmp memory during salloc
 
-model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
-model_name_short = "Llama-3-8B-Instruct"	
+model_name = "meta-llama/Meta-Llama-3-70B-Instruct"
+model_name_short = "Llama-3-70B-Instruct"	
 data_dir = "advanced-ai-risk/lm_generated_evals"
 behaviors = [
     "corrigible-neutral-HHH", 
     "power-seeking-inclination", 
     "self-awareness-general-ai",
 ]
+OUT_DIR = "train_set_sv"
 
-deciles = [(0.0, 0.1), (0.1, 0.2), (0.2, 0.3), (0.3, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0)]
+deciles = [(0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.0)]
 
 model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto")
 tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -41,11 +43,11 @@ def add_special_tokens(questions, pos_answers, neg_answers):
 def compute_sv(pos_prompts, neg_prompts, tokenizer, model):
     contrastive_statements = pos_prompts + neg_prompts
     input_ids_contrastive = tokenizer(contrastive_statements, padding=True, return_tensors="pt", add_special_tokens=False).to("cuda")
-    
+
     steering_vectors = []
-    
+    hidden_states = []
     with torch.no_grad():
-        hidden_states = model(**input_ids_contrastive, output_hidden_states=True)["hidden_states"] #L, B, S, H
+        hidden_states = model(**input_ids_contrastive, output_hidden_states=True, batch_size=1)["hidden_states"] #L, B, S, H
         num_pos = len(pos_prompts)
         num_neg = len(neg_prompts)
         
@@ -59,7 +61,7 @@ def compute_sv(pos_prompts, neg_prompts, tokenizer, model):
     
     return steering_vectors
 
-def write_steering_vectors_to_json(model_name, target_name, split, steering_vectors, output_dir="train_set_sv"):
+def write_steering_vectors_to_json(model_name, target_name, split, steering_vectors, output_dir=OUT_DIR):
     """
     Writes steering vectors to a JSON file with the naming format: model_name-target_name-split.json
 
@@ -86,8 +88,8 @@ def write_steering_vectors_to_json(model_name, target_name, split, steering_vect
 
 if __name__ == "__main__":
     for behavior in tqdm(behaviors):
-        ds = load_dataset("json", data_dir=f"./evals/{data_dir}", data_files=f"{behavior}.jsonl", split="train")
-        train_len = 0.8 * len(ds)
+        ds = load_dataset("Anthropic/model-written-evals", data_dir=data_dir, data_files=f"{behavior}.jsonl", split="train[:80%]")
+        train_len = len(ds)
         for decile in tqdm(deciles):
             start_idx = int(decile[0] * train_len)
             end_idx = int(decile[1] * train_len)

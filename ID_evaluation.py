@@ -13,13 +13,16 @@ if SAFETY:
     data_dir = "advanced-ai-risk/lm_generated_evals"  # used for benchmark dataset
 else:
     data_dir = "persona"
-SV_DIR = "ActAdd_sv"  # directory containing steering vectors
-BEHAVIOR = "power-seeking-inclination"  # example behavior for benchmark and steering vectors file
-batch_size = 16
+SV_DIR = "train_set_sv"  # directory containing steering vectors
+BEHAVIORS = ["power-seeking-inclination", "self-awarebess-general-ai", "corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
+STEERING_VECTORS = []
+STEERING_STRENGTHS = [1, -1]
 MAX_NEW_TOKENS = 50
 FORMAT_PROMPT = True #dont do false lol, model will be in the wrong 'mode' and think before answering or do other stuff
 NUM_PROC = 16
 MODE = "A/B" if SAFETY else "Y/N" # "Y/N" or "A/B"
+OUT_DIR = "ID_eval_results" # output directory
+EVAL_TARGET = 'layers', 'strengths'
 
 # Load model and tokenizer
 model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto")
@@ -27,18 +30,17 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.pad_token_id = tokenizer.eos_token_id
 tokenizer.padding_side = "left"
-alpha = -1 # steering strength
-TAG = "ActAdd" #for output file naming
+TAG = "CAA" #for output file naming
 
 # SETTINGS - END
 
 # Define a hook generator to inject a steering vector at the given layer
-def get_hook(layer_idx, steer_vector, alpha):
+def get_hook(layer_idx, steer_vector, strength):
     def hook(module, inputs, output):
         # steer_vector is of shape (hidden_size,)
         v = steer_vector.to(output[0].device)
         # Modify the hidden state of the LAST token only.
-        output[0][:, -1] += alpha*v
+        output[0][:, -1] += strength*v
         return output
     return hook
 
@@ -71,7 +73,7 @@ def add_special_tokens(item):
 
 # Evaluation function: for a (small) benchmark dataset compute %
 # of generated answers that contain the answer_matching_behavior string.
-def evaluate_model(model, ds, tokenizer, layer):
+def evaluate_model(model, ds, tokenizer):
     ds_size = len(ds)
     
     if MODE == "Y/N":
@@ -92,7 +94,7 @@ def evaluate_model(model, ds, tokenizer, layer):
             temperature=None,
             top_p=None,
             use_cache=True, 
-            pad_token_id=tokenizer.eos_token_id
+            pad_token_id=tokenizer.eos_token_id,
         )
     new_tokens = gen_ids[..., prompt_len:]
     gen_text = tokenizer.batch_decode(new_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True)
@@ -101,53 +103,61 @@ def evaluate_model(model, ds, tokenizer, layer):
     return score
 
 def main():
-    # Load benchmark dataset (using the JSONL file from ./evals/)
-    benchmark_ds = load_dataset("Anthropic/model-written-evals", data_dir=data_dir, data_files=f"{BEHAVIOR}.jsonl", split="train[-20%:]")
-    
-    # Load steering vectors from JSON file
-    # Assuming the file is named using the format: model_name-behavior-split.json,
-    # e.g., "Llama-3-8B-Instruct-corrigible-neutral-HHH-train.json"
-    #sv_file = f"./steering_vectors/Llama-3-8B-Instruct-{behavior}-0-0.1.json"
-    sv_file = f"./{SV_DIR}/Llama-3-8B-Instruct-{BEHAVIOR}.json"
-    if not os.path.exists(sv_file):
-        raise FileNotFoundError(f"Steering vector file not found: {sv_file}")
+    for behavior in BEHAVIORS:
+        # Load benchmark dataset (using the JSONL file from ./evals/)
+        benchmark_ds = load_dataset("Anthropic/model-written-evals", data_dir=data_dir, data_files=f"{behavior}.jsonl", split="train[-20%:]")
+        baseline = evaluate_model(model, benchmark_ds, tokenizer)
+        results = {}
+        results["baseline"] = baseline
+        for sv in STEERING_VECTORS:
+            # e.g., "Llama-3-8B-Instruct-corrigible-neutral-HHH-train.json"
+            sv_file = f"./{SV_DIR}/{model_name}-{behavior}-{sv}.json"
+            if not os.path.exists(sv_file):
+                raise FileNotFoundError(f"Steering vector file not found: {sv_file}")
 
-    with open(sv_file, "r") as f:
-        sv_list = json.load(f)
-    # Convert the list to a tensor; expected shape: (num_layers, hidden_size)
-    steering_tensor = torch.tensor(sv_list)  # shape: (L_steered, H)
-    
-    layer_scores = []
-    layer_indices = []
-    num_layers = steering_tensor.shape[0]
-    
-    # Evaluate model for each steering layer modification
-    for i in range(0, num_layers, 2):
-        # Register hook at corresponding layer.
-        # Note: steering_tensor was computed from layers[1:], so real layer index is (i+1).
-        layer_idx = i + 1  
-        hook = get_hook(layer_idx, steering_tensor[i], alpha)
-        handle = model.model.layers[layer_idx].register_forward_hook(hook)
-        
-        print(f"Evaluating steering at layer {layer_idx}...")
-        score = evaluate_model(model, benchmark_ds, tokenizer, layer_idx)
-        print(f"Layer {layer_idx}: Answer Matching Behavior % = {score:.2f}")
-        
-        layer_indices.append(layer_idx)
-        layer_scores.append(score)
-        
-        handle.remove()  # remove hook after evaluation
+            with open(sv_file, "r") as f:
+                sv_list = json.load(f)
+            # Convert the list to a tensor; expected shape: (num_layers, hidden_size)
+            steering_tensor = torch.tensor(sv_list)  # shape: (L_steered, H)    
+            result_sv = {}
 
-    # Plot results
-    plt.figure(figsize=(8, 5))
-    plt.plot(layer_indices, layer_scores, marker='o')
-    plt.xlabel("Layer Steered")
-    plt.ylabel("Answer Matching Behavior (%)")
-    plt.title("Effect of Steering by Layer on Answer Matching Behavior")
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(f"strength-vs-{BEHAVIOR}-{TAG}.png")
-    plt.show()
+            for strength in STEERING_STRENGTHS:                
+                layer_scores = []
+                layer_indices = []
+                num_layers = steering_tensor.shape[0]
+                
+                # Evaluate model for each steering layer modification
+                for i in range(0, num_layers, 2):
+                    # Register hook at corresponding layer.
+                    # Note: steering_tensor was computed from layers[1:], so real layer index is (i+1).
+                    layer_idx = i + 1  
+                    hook = get_hook(layer_idx, steering_tensor[i], strength)
+                    handle = model.model.layers[layer_idx].register_forward_hook(hook)
+                    
+                    print(f"Evaluating steering at layer {layer_idx}...")
+                    score = evaluate_model(model, benchmark_ds, tokenizer)
+                    print(f"Layer {layer_idx}: Answer Matching Behavior % = {score:.2f}")
+                    
+                    layer_indices.append(layer_idx)
+                    layer_scores.append(score)
+                    
+                    handle.remove()  # remove hook after evaluation
+                result_sv[strength] = layer_scores
+                '''
+                # Plot results
+                plt.figure(figsize=(8, 5))
+                plt.plot(layer_indices, layer_scores, marker='o')
+                plt.xlabel("Layer Steered")
+                plt.ylabel("Answer Matching Behavior (%)")
+                plt.title("Effect of Steering by Layer on Answer Matching Behavior")
+                plt.grid(True)
+                plt.tight_layout()
+                plt.savefig(f"strength-vs-{behavior}-{TAG}.png")
+                plt.show()
+                '''
+            results[sv] = result_sv
+        results["layers"] = layer_indices
+        out_filepath = os.join(OUT_DIR, f"{EVAL_TARGET}-{model}-{TAG}-{behavior}.json")
 
 if __name__ == "__main__":
     main()
