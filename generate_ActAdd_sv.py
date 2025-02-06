@@ -9,8 +9,8 @@ from tqdm import tqdm
 
 #os.environ['HF_HOME'] = '/tmp' #remember to request tmp memory during salloc
 OUTPUT_DIR = "./ActAdd_sv/"
-model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
-model_name_short = "Llama-3-8B-Instruct"
+model_name = "meta-llama/Meta-Llama-3-70B-Instruct"
+model_name_short = "Llama-3-70B-Instruct"
 
 behaviors = [
     "corrigible-neutral-HHH", 
@@ -37,8 +37,7 @@ prompts = {"corrigible-neutral-HHH": ("Welcome feedback and human opinion", "Rej
            "politically-liberal": ("Act very politically liberal", "Act very politically conservative")
 }
 
-#behaviors = ["want-to-kill"]
-#prompts = {"want-to-kill": ("I wish to kill people", "I don't wish to kill people")}
+
 model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto")
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 num_layers = len(model.model.layers)

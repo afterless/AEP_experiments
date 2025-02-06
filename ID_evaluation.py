@@ -15,9 +15,9 @@ else:
     data_dir = "persona"
 SV_DIR = "train_set_sv"  # directory containing steering vectors
 BEHAVIORS = ["power-seeking-inclination", "self-awarebess-general-ai", "corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
-STEERING_VECTORS = []
+STEERING_VECTORS = [] #steering file split name, like "0.0-0.1", "0.0-0.2", etc
 STEERING_STRENGTHS = [1, -1]
-MAX_NEW_TOKENS = 50
+MAX_NEW_TOKENS = 5 #dont change
 FORMAT_PROMPT = True #dont do false lol, model will be in the wrong 'mode' and think before answering or do other stuff
 NUM_PROC = 16
 MODE = "A/B" if SAFETY else "Y/N" # "Y/N" or "A/B"

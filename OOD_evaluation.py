@@ -30,7 +30,7 @@ from OOD_eval_prompt import prompt as eval_prompt_template, behavior_description
 BEHAVIORS = ["power-seeking-inclination"]
 STEERING_STRENGTHS = [-4, -3, -2, -1, 0, 1, 2, 3, 4]
 # List of dataset sizes indicating which evaluation dataset to use
-PROMPT_LENS = ["medium"]
+PROMPT_LENS = ["medium"] # "short", "medium", "long"
 # List of steering layers (which layer to apply the steering vector on)
 STEERING_LAYERS = [15]
 # Fixed generation length for responses
@@ -41,13 +41,11 @@ DO_SAMPLE = False
 MODEL_NAME = "meta-llama/Meta-Llama-3-8B-Instruct"
 EVAL_MODEL_NAME = "meta-llama/Meta-Llama-3-70B-Instruct"
 STEERING_VECTORS_DIR = "./ActAdd_sv"
-EVAL_DATASET_DIR = "./evals/AEP_OOD_evaluation"  # Expected subdirectories: -short, -medium, -long
 RESULTS_DIR = "./OOD_eval_results"
 DATA_DIR = "safety_features"
 STEERED_RESPONSE_DIR = "./OOD_responses"
 NUM_PROC = 10
 USE_70B = False
-os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # MODEL
 model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, torch_dtype=torch.bfloat16, device_map="auto")
