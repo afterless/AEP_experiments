@@ -158,6 +158,8 @@ def main():
             results[sv] = result_sv
         results["layers"] = layer_indices
         out_filepath = os.join(OUT_DIR, f"{EVAL_TARGET}-{model}-{TAG}-{behavior}.json")
+        with open(out_filepath, "w") as f:
+            json.dump(results, f, indent=4)
 
 if __name__ == "__main__":
     main()

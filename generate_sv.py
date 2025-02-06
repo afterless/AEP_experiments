@@ -2,9 +2,11 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 import json
 import os
+import gc
 from datasets import load_dataset
 from tqdm import tqdm
 from torch.utils.data import DataLoader
+import pdb
 
 ### SETTINGS - START
 
@@ -12,17 +14,19 @@ from torch.utils.data import DataLoader
 
 model_name = "meta-llama/Meta-Llama-3-70B-Instruct"
 model_name_short = "Llama-3-70B-Instruct"	
-data_dir = "advanced-ai-risk/lm_generated_evals"
+data_dir = "persona"
 behaviors = [
-    "corrigible-neutral-HHH", 
-    "power-seeking-inclination", 
-    "self-awareness-general-ai",
+    "conscientiousness",
+    "extraversion",
+    "agreeableness",
+    "neuroticism",
+    "politically-liberal"
 ]
 OUT_DIR = "train_set_sv"
 
-deciles = [(0.0, 0.2), (0.2, 0.4), (0.4, 0.6), (0.6, 0.8), (0.8, 1.0)]
+deciles = [(0.0, 0.1), (0.1, 0.2), (0.2, 0.3), (0.3, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0)]
 
-model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto")
+model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="balanced_low_0")
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 num_layers = len(model.model.layers)
 
@@ -42,23 +46,26 @@ def add_special_tokens(questions, pos_answers, neg_answers):
 
 def compute_sv(pos_prompts, neg_prompts, tokenizer, model):
     contrastive_statements = pos_prompts + neg_prompts
-    input_ids_contrastive = tokenizer(contrastive_statements, padding=True, return_tensors="pt", add_special_tokens=False).to("cuda")
-
+    input_ids_contrastive = tokenizer(contrastive_statements, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
     steering_vectors = []
     hidden_states = []
-    with torch.no_grad():
-        hidden_states = model(**input_ids_contrastive, output_hidden_states=True, batch_size=1)["hidden_states"] #L, B, S, H
+    with torch.inference_mode():
+        hidden_states = model(**input_ids_contrastive, output_hidden_states=True)["hidden_states"] #L, B, S, H
         num_pos = len(pos_prompts)
         num_neg = len(neg_prompts)
-        
+
         for layer in range(len(hidden_states)):
-            final_token_reps = hidden_states[layer][:, -1, :].float() #B, H
+            final_token_reps = hidden_states[layer][:, -1, :] #B, H
             avg_pos = final_token_reps[:num_pos].mean(dim=0)
             avg_neg = final_token_reps[num_pos:num_pos+num_neg].mean(dim=0) #B, H
-            steering_vectors.append(avg_pos - avg_neg)
-    
+            steering_vectors.append((avg_pos - avg_neg).to("cuda:0"))
+
         steering_vectors = torch.stack(steering_vectors)[1:]  # Cutoff the embedding layer.
     
+    del hidden_states, input_ids_contrastive
+    gc.collect()
+    torch.cuda.synchronize()
+    torch.cuda.empty_cache()
     return steering_vectors
 
 def write_steering_vectors_to_json(model_name, target_name, split, steering_vectors, output_dir=OUT_DIR):
@@ -87,8 +94,8 @@ def write_steering_vectors_to_json(model_name, target_name, split, steering_vect
 
 
 if __name__ == "__main__":
-    for behavior in tqdm(behaviors):
-        ds = load_dataset("Anthropic/model-written-evals", data_dir=data_dir, data_files=f"{behavior}.jsonl", split="train[:80%]")
+    for behavior in tqdm(["openness"]):
+        ds = load_dataset("json", data_files="./openness.jsonl", split="train[:80%]")
         train_len = len(ds)
         for decile in tqdm(deciles):
             start_idx = int(decile[0] * train_len)
