@@ -12,9 +12,9 @@ model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
 SV_DIR = "train_set_sv"  # directory containing steering vectors
 # BEHAVIORS = ["desire-to-persuade-people-to-be-more-honest-to-others", "agreeableness", "conscientiousness", "extraversion", "openness", "neuroticism", "politically-liberal"]  # example behavior for benchmark and steering vectors file
 BEHAVIORS = ["power-seeking-inclination", "self-awareness-general-ai", "corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
-STEERING_VECTORS = [2, 4, 6, 8, 10] # contains stop decile index, assuming starting from 1 i.e. 1: 0-0.1, 6: 0-0.6
+STEERING_VECTORS = [10] # contains stop decile index, assuming starting from 1 i.e. 1: 0-0.1, 6: 0-0.6
 STEERING_STRENGTHS = [-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10]
-MAX_NEW_TOKENS = 700
+MAX_NEW_TOKENS = 400
 FORMAT_PROMPT = True #dont do false lol, model will be in the wrong 'mode' and think before answering or do other stuff
 NUM_PROC = 16
 OUT_DIR = "MMLU_eval_results" # output directory
@@ -58,8 +58,9 @@ def add_special_tokens(item):
 def evaluate_model(model, ds, tokenizer):
     ds = ds.map(add_special_tokens, num_proc=NUM_PROC)
     score = 0
-    for i in range(0, len(ds), 12):
-        mini_ds = ds.select(range(i, i+12))
+    print(len(ds))
+    for i in range(0, len(ds), 500):
+        mini_ds = ds.select(range(i, i+500))
         ds_size = len(mini_ds)
         targets = [s for s in mini_ds["answer"]]
         input_ids = tokenizer(mini_ds["prompt"], return_tensors="pt", padding=True, add_special_tokens=False).to(model.device)
@@ -73,12 +74,12 @@ def evaluate_model(model, ds, tokenizer):
                 top_p=None,
                 use_cache=True, 
                 pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=[tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")]
+                eos_token_id=tokenizer.convert_tokens_to_ids("<|eot_id|>")
             )
         new_tokens = gen_ids[..., :]
         gen_text = tokenizer.batch_decode(new_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        score += sum([1 for ans, tgt in zip(gen_text, targets) if (str(tgt) in ans[-1])]) / ds_size * 100
         import pdb; pdb.set_trace()
-        score += sum([1 for ans, tgt in zip(gen_text, targets) if (tgt in ans[-1])]) / ds_size * 100
     return score
 
 def main():
@@ -109,7 +110,7 @@ def main():
                 num_layers = steering_tensor.shape[0]
                 
                 # Evaluate model for each steering layer modification
-                for i in range(0, num_layers, 2):
+                for i in range(14, 15):
                     # Register hook at corresponding layer.
                     # Note: steering_tensor was computed from layers[1:], so real layer index is (i+1).
                     layer_idx = i + 1  

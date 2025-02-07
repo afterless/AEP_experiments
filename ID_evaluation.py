@@ -10,14 +10,14 @@ from datasets import load_dataset
 
 # SETTINGS - START
 model_name = "meta-llama/Meta-Llama-3-70B-Instruct"
-SAFETY = True
+SAFETY = False
 if SAFETY:
     data_dir = "advanced-ai-risk/lm_generated_evals"  # used for benchmark dataset
 else:
     data_dir = "persona"
-SV_DIR = "train_set_sv"  # directory containing steering vectors
-# BEHAVIORS = ["agreeableness", "conscientiousness", "extraversion", "openness", "neuroticism", "politically-liberal"]  # example behavior for benchmark and steering vectors file
-BEHAVIORS = ["power-seeking-inclination", "self-awareness-general-ai", "corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
+SV_DIR = "ActAdd_sv"  # directory containing steering vectors
+BEHAVIORS = ["agreeableness", "conscientiousness", "extraversion", "openness", "neuroticism", "politically-liberal"]  # example behavior for benchmark and steering vectors file
+# BEHAVIORS = ["power-seeking-inclination", "self-awareness-general-ai", "corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
 STEERING_VECTORS = [10] # contains stop decile index, assuming starting from 1 i.e. 1: 0-0.1, 6: 0-0.6
 STEERING_STRENGTHS = [-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10]
 MAX_NEW_TOKENS = 5 #dont change
@@ -33,7 +33,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.pad_token_id = tokenizer.eos_token_id
 tokenizer.padding_side = "left"
-TAG = "CAA" #for output file naming
+TAG = "ActAdd" #for output file naming
 
 # SETTINGS - END
 
@@ -121,20 +121,20 @@ def main():
         results["baseline"] = baseline
         for sv in STEERING_VECTORS:
             # e.g., "Llama-3-8B-Instruct-corrigible-neutral-HHH-train.json"
-            behavior_files = f"Llama-3-70B-Instruct-{behavior}-*-*.json"
-            files = Path(f"./{SV_DIR}").glob(behavior_files)
-            file_list = list(files)[:sv]
-            steering_tensor = None
-            for file in file_list:
-                with open(file, "r") as f:
-                    vector = torch.tensor(json.load(f))
-                    if steering_tensor is None:
-                        steering_tensor = vector
-                    else:
-                        steering_tensor.add_(vector)
-            steering_tensor /= len(file_list)
-            # with open(f"./{SV_DIR}/Llama-3-8B-Instruct-{behavior}.json", "r") as f:
-            #     steering_tensor = torch.tensor(json.load(f))
+            # behavior_files = f"Llama-3-70B-Instruct-{behavior}-*-*.json"
+            # files = Path(f"./{SV_DIR}").glob(behavior_files)
+            # file_list = list(files)[:sv]
+            # steering_tensor = None
+            # for file in file_list:
+            #     with open(file, "r") as f:
+            #         vector = torch.tensor(json.load(f))
+            #         if steering_tensor is None:
+            #             steering_tensor = vector
+            #         else:
+            #             steering_tensor.add_(vector)
+            # steering_tensor /= len(file_list)
+            with open(f"./{SV_DIR}/Llama-3-70B-Instruct-{behavior}.json", "r") as f:
+                steering_tensor = torch.tensor(json.load(f))
             result_sv = {}
             for strength in STEERING_STRENGTHS:                
                 layer_scores = []
