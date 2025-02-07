@@ -1,5 +1,4 @@
 from pathlib import Path
-import gc
 import os
 import json
 import torch
@@ -9,23 +8,17 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from datasets import load_dataset
 
 # SETTINGS - START
-model_name = "meta-llama/Meta-Llama-3-70B-Instruct"
-SAFETY = True
-if SAFETY:
-    data_dir = "advanced-ai-risk/lm_generated_evals"  # used for benchmark dataset
-else:
-    data_dir = "persona"
+model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
 SV_DIR = "train_set_sv"  # directory containing steering vectors
 # BEHAVIORS = ["desire-to-persuade-people-to-be-more-honest-to-others", "agreeableness", "conscientiousness", "extraversion", "openness", "neuroticism", "politically-liberal"]  # example behavior for benchmark and steering vectors file
 BEHAVIORS = ["power-seeking-inclination", "self-awareness-general-ai", "corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
 STEERING_VECTORS = [2, 4, 6, 8, 10] # contains stop decile index, assuming starting from 1 i.e. 1: 0-0.1, 6: 0-0.6
-STEERING_STRENGTHS = [-1, 1]
-MAX_NEW_TOKENS = 5 #dont change
+STEERING_STRENGTHS = [-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10]
+MAX_NEW_TOKENS = 700
 FORMAT_PROMPT = True #dont do false lol, model will be in the wrong 'mode' and think before answering or do other stuff
 NUM_PROC = 16
-MODE = "A/B" if SAFETY else "Y/N" # "Y/N" or "A/B"
-OUT_DIR = "ID_eval_results" # output directory
-EVAL_TARGET = 'layers'
+OUT_DIR = "MMLU_eval_results" # output directory
+EVAL_TARGET = 'strengths'
 
 # Load model and tokenizer
 model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="auto")
@@ -49,79 +42,55 @@ def get_hook(layer_idx, steer_vector, strength):
 
 def add_special_tokens(item):
     prompt = item["question"]
+    choices = item["choices"]
     # Apply transformation to the prompt text.
-    if FORMAT_PROMPT:
-        if MODE == "Y/N":
-            formatted_prompt = (
-                f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
-                f"{prompt}\n\nOnly output your final answer, Yes or No.<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
-            )
-        elif MODE == "A/B":
-            formatted_prompt = (
-                f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
-                f"{prompt}\n\nOnly output your final answer, A or B.<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
-            )
-    else:
-        if MODE == "Y/N":
-            formatted_prompt = (
-                f"<|begin_of_text|>{prompt}\n\nOnly output your final answer, Yes or No."
-            )
-        elif MODE == "A/B":
-            formatted_prompt = (
-                f"<|begin_of_text|>{prompt}\n\nOnly output your final answer, A or B."
-            )
-
+    formatted_prompt = (
+        f"<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
+        f"{prompt}\n\n{choices}\n\n"
+        f"Please describe your resoning in thorough detail, and afterwards output your final answer as either 0, 1, 2, or 3 only, nothing else."
+        f"<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+    )
     return {"prompt": formatted_prompt}
 
 
 # Evaluation function: for a (small) benchmark dataset compute %
 # of generated answers that contain the answer_matching_behavior string.
 def evaluate_model(model, ds, tokenizer):
-    ds_size = len(ds)
-    
-    if MODE == "Y/N":
-        targets = [s[1:] for s in ds["answer_matching_behavior"]]
-    elif MODE == "A/B":
-        targets = [s[2] for s in ds["answer_matching_behavior"]]
-
     ds = ds.map(add_special_tokens, num_proc=NUM_PROC)
-    input_ids = tokenizer(ds["prompt"], return_tensors="pt", padding=True, add_special_tokens=False).to(model.device)
+    score = 0
+    for i in range(0, len(ds), 12):
+        mini_ds = ds.select(range(i, i+12))
+        ds_size = len(mini_ds)
+        targets = [s for s in mini_ds["answer"]]
+        input_ids = tokenizer(mini_ds["prompt"], return_tensors="pt", padding=True, add_special_tokens=False).to(model.device)
 
-    prompt_len = len(input_ids["input_ids"][0])
-
-    with torch.inference_mode():
-        gen_ids = model.generate(
-            **input_ids, 
-            max_new_tokens=MAX_NEW_TOKENS, 
-            do_sample=False, 
-            temperature=None,
-            top_p=None,
-            use_cache=True, 
-            pad_token_id=tokenizer.eos_token_id,
-        )
-    new_tokens = gen_ids[..., prompt_len:]
-    gen_text = tokenizer.batch_decode(new_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True)
-    score = sum([1 for ans, tgt in zip(gen_text, targets) if (tgt in ans)]) / ds_size * 100
-
-    del input_ids, gen_ids, gen_text
-    gc.collect()
-    torch.cuda.synchronize()
-    torch.cuda.empty_cache()
+        with torch.inference_mode():
+            gen_ids = model.generate(
+                **input_ids, 
+                max_new_tokens=MAX_NEW_TOKENS, 
+                do_sample=False, 
+                temperature=None,
+                top_p=None,
+                use_cache=True, 
+                pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=[tokenizer.eos_token_id, tokenizer.convert_tokens_to_ids("<|eot_id|>")]
+            )
+        new_tokens = gen_ids[..., :]
+        gen_text = tokenizer.batch_decode(new_tokens, skip_special_tokens=True, clean_up_tokenization_spaces=True)
+        import pdb; pdb.set_trace()
+        score += sum([1 for ans, tgt in zip(gen_text, targets) if (tgt in ans[-1])]) / ds_size * 100
     return score
 
 def main():
     for behavior in BEHAVIORS:
         # Load benchmark dataset (using the JSONL file from ./evals/)
-        if behavior == "openness":
-            benchmark_ds = load_dataset("json", data_files=f"{behavior}.jsonl", split='train[-20%:]')
-        else:
-            benchmark_ds = load_dataset("Anthropic/model-written-evals", data_dir=data_dir, data_files=f"{behavior}.jsonl", split='train[-20%:]')
+        benchmark_ds = load_dataset("cais/mmlu", "all", split="validation")
         baseline = evaluate_model(model, benchmark_ds, tokenizer)
         results = {}
         results["baseline"] = baseline
         for sv in STEERING_VECTORS:
             # e.g., "Llama-3-8B-Instruct-corrigible-neutral-HHH-train.json"
-            behavior_files = f"Llama-3-70B-Instruct-{behavior}-*-*.json"
+            behavior_files = f"Llama-3-8B-Instruct-{behavior}-*-*.json"
             files = Path(f"./{SV_DIR}").glob(behavior_files)
             file_list = list(files)[:sv]
             steering_tensor = None
@@ -133,8 +102,6 @@ def main():
                     else:
                         steering_tensor.add_(vector)
             steering_tensor /= len(file_list)
-            # with open(f"./{SV_DIR}/Llama-3-8B-Instruct-{behavior}.json", "r") as f:
-            #     steering_tensor = torch.tensor(json.load(f))
             result_sv = {}
             for strength in STEERING_STRENGTHS:                
                 layer_scores = []
@@ -158,28 +125,25 @@ def main():
                     layer_indices.append(layer_idx)
                     layer_scores.append(steer_score - baseline)
                     
-                key = "pos" if strength == 1 else "neg"
-                result_sv[key] = layer_scores
+                result_sv[strength] = torch.tensor(layer_scores).mean().item()
                 
             # Plot results
             if sv == 10:
                 plt.figure(figsize=(8, 5))
-                plt.plot(layer_indices, result_sv["pos"], marker='o', color='blue', label="Positive")
-                plt.plot(layer_indices, result_sv["neg"], marker='o', color='red', label="Negative")
-                plt.plot()
-                plt.xlabel("Layer Steered")
+                plt.plot(STEERING_STRENGTHS, list(result_sv.values()), marker='o', color='blue')
+                plt.xlabel("Strength Applied")
+                plt.xticks(STEERING_STRENGTHS)
                 plt.ylabel("Change in Matching Behavior (%)")
-                plt.title("Change in Answer Matching Behavior via Steering by Layer")
-                plt.legend()
+                plt.title("Change in MMLU Accuracy via Steering Strength")
                 plt.grid(True)
                 plt.tight_layout()
-                plt.savefig(f"layers-vs-{behavior}-{TAG}.png")
+                plt.savefig(f"strength-vs-{behavior}-{TAG}.png")
                 plt.show()
                 
             results[sv] = result_sv
 
         os.makedirs(OUT_DIR, exist_ok=True)
-        out_filepath = os.path.join(OUT_DIR, f"{EVAL_TARGET}-Llama-3-70B-Instruct-{TAG}-{behavior}.json")
+        out_filepath = os.path.join(OUT_DIR, f"{EVAL_TARGET}-Llama-3-8B-Instruct-{TAG}-{behavior}.json")
         with open(out_filepath, "w") as f:
             json.dump(results, f, indent=4)
 

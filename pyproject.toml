@@ -1,0 +1,30 @@
+[project]
+name = "aep-experiments"
+version = "0.1.0"
+description = "experiments for aep things"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "accelerate>=1.3.0",
+    "datasets>=3.2.0",
+    "matplotlib>=3.9.4",
+    "torch>=2.6.0",
+    "tqdm>=4.67.1",
+    "transformers>=4.48.2",
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", marker = "platform_system == 'darwin'" }, 
+    { index = "pytorch-cu124", marker = "platform_system == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
