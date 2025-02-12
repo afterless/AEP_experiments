@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+logs/
+*_sv/
+*_eval_results/
