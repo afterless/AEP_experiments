@@ -204,13 +204,11 @@ def main():
                     behavior_scores.append(sum(behavior_accum) / len(behavior_accum))
                     coherency_scores.append(sum(coherency_accum) / len(coherency_accum))
 
-                    '''
                     # Save evaluation results for later plotting.
-                    out_filename = f"{behavior}_{prompt_len}_strength{strength}_layer{steering_layer}.json"
+                    out_filename = f"{behavior}-{prompt_len}-strength-{strength}-layer-{steering_layer}.json"
                     out_filepath = os.path.join(RESULTS_DIR, out_filename)
                     with open(out_filepath, "w") as fout:
                         json.dump(behavior_results, fout, indent=4)
-                    print(f"Results saved to {out_filepath}")'''
 
             print(behavior_scores)
             print(coherency_scores)

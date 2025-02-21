@@ -5,6 +5,7 @@ import os
 import gc
 from datasets import load_dataset
 from tqdm import tqdm
+from more_itertools import chunked
 from torch.utils.data import DataLoader
 import pdb
 
@@ -12,22 +13,26 @@ import pdb
 
 #os.environ['HF_HOME'] = '/tmp' #remember to request tmp memory during salloc
 
-model_name = "meta-llama/Meta-Llama-3-70B-Instruct"
-model_name_short = "Llama-3-70B-Instruct"	
-data_dir = "persona"
+model_name_short = "Llama-3.1-405B-Instruct"	
+model = AutoModelForCausalLM.from_pretrained("unsloth/Meta-Llama-3.1-405B-Instruct-bnb-4bit", torch_dtype="bfloat16", device_map="auto")
+tokenizer = AutoTokenizer.from_pretrained("unsloth/Meta-Llama-3.1-405B-Instruct-bnb-4bit")
+# data_dir = "persona"
+# behaviors = [
+#     "openness",
+#     "conscientiousness",
+#     "extraversion",
+#     "agreeableness",
+#     "neuroticism",
+#     "politically-liberal"
+# ]
+data_dir = "advanced-ai-risk/lm_generated_evals"
 behaviors = [
-    "conscientiousness",
-    "extraversion",
-    "agreeableness",
-    "neuroticism",
-    "politically-liberal"
+    "power-seeking-inclination",
+    "self-awareness-general-ai",
+    "corrigible-neutral-HHH"
 ]
-OUT_DIR = "train_set_sv"
+OUT_DIR = "fib_sv"
 
-deciles = [(0.0, 0.1), (0.1, 0.2), (0.2, 0.3), (0.3, 0.4), (0.4, 0.5), (0.5, 0.6), (0.6, 0.7), (0.7, 0.8), (0.8, 0.9), (0.9, 1.0)]
-
-model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="balanced_low_0")
-tokenizer = AutoTokenizer.from_pretrained(model_name)
 num_layers = len(model.model.layers)
 
 tokenizer.pad_token = tokenizer.eos_token
@@ -45,43 +50,35 @@ def add_special_tokens(questions, pos_answers, neg_answers):
 ### HELPER FUNCTIONS
 
 def compute_sv(pos_prompts, neg_prompts, tokenizer, model):
-    contrastive_statements = pos_prompts + neg_prompts
-    input_ids_contrastive = tokenizer(contrastive_statements, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
-    steering_vectors = []
-    hidden_states = []
-    with torch.inference_mode():
-        hidden_states = model(**input_ids_contrastive, output_hidden_states=True)["hidden_states"] #L, B, S, H
-        num_pos = len(pos_prompts)
-        num_neg = len(neg_prompts)
+    bs = 5
+    steering_vectors = None
+    for pos, neg in zip(chunked(pos_prompts, bs), chunked(neg_prompts, bs)):
+        contrastive_statements = pos + neg
+        input_ids_contrastive = tokenizer(contrastive_statements, padding=True, return_tensors="pt", add_special_tokens=False).to(model.device)
+        hidden_states = []
+        with torch.inference_mode():
+            hidden_states = model(**input_ids_contrastive, output_hidden_states=True)["hidden_states"] #L, B, S, H
+            num_pos = len(pos)
+            layer_vec = []
 
-        for layer in range(len(hidden_states)):
-            final_token_reps = hidden_states[layer][:, -1, :] #B, H
-            avg_pos = final_token_reps[:num_pos].mean(dim=0)
-            avg_neg = final_token_reps[num_pos:num_pos+num_neg].mean(dim=0) #B, H
-            steering_vectors.append((avg_pos - avg_neg).to("cuda:0"))
+            for layer in range(len(hidden_states)):
+                final_token_reps = hidden_states[layer][:, -1, :] #B, H
+                avg_pos = final_token_reps[:num_pos].mean(dim=0)
+                avg_neg = final_token_reps[num_pos:].mean(dim=0)
+                layer_vec.append((avg_pos - avg_neg).to("cuda:0"))
 
-        steering_vectors = torch.stack(steering_vectors)[1:]  # Cutoff the embedding layer.
-    
-    del hidden_states, input_ids_contrastive
-    gc.collect()
-    torch.cuda.synchronize()
-    torch.cuda.empty_cache()
+            if steering_vectors == None:
+                steering_vectors = torch.stack(layer_vec)[1:] / (len(pos_prompts) / bs)  # Cutoff the embedding layer.
+            else:
+                steering_vectors += torch.stack(layer_vec)[1:] / (len(pos_prompts) / bs)
+
+            del hidden_states, input_ids_contrastive
+            gc.collect()
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
     return steering_vectors
 
 def write_steering_vectors_to_json(model_name, target_name, split, steering_vectors, output_dir=OUT_DIR):
-    """
-    Writes steering vectors to a JSON file with the naming format: model_name-target_name-split.json
-
-    Args:
-        model_name (str): Name of the model.
-        target_name (str): Target name for the steering vectors.
-        split (str): Dataset split name (e.g., 'train', 'test').
-        steering_vectors (torch.Tensor): Tensor containing steering vectors.
-        output_dir (str, optional): Directory to save the JSON file. Defaults to "steering_vectors".
-
-    Returns:
-        str: Path to the saved JSON file.
-    """
     filename = f"{model_name}-{target_name}-{split}.json"
     filepath = os.path.join(output_dir, filename)
 
@@ -91,22 +88,27 @@ def write_steering_vectors_to_json(model_name, target_name, split, steering_vect
     with open(filepath, 'w') as f:
         json.dump(steering_list, f, ensure_ascii=False, indent=4)
 
-
+def fib():
+    a, b = 1, 2
+    while a <= 100:
+        yield a
+        a, b = b, a+b
 
 if __name__ == "__main__":
-    for behavior in tqdm(["openness"]):
-        ds = load_dataset("json", data_files="./openness.jsonl", split="train[:80%]")
+    for behavior in behaviors:
+        if behavior == "openness":
+            ds = load_dataset("json", data_files=f"{behavior}.jsonl", split="train[:80%]")
+        else:
+            ds = load_dataset("Anthropic/model-written-evals", data_dir=data_dir, data_files=f"{behavior}.jsonl", split="train[:80%]")
         train_len = len(ds)
-        for decile in tqdm(deciles):
-            start_idx = int(decile[0] * train_len)
-            end_idx = int(decile[1] * train_len)
+        for i in tqdm(fib()):
 
-            questions = ds[start_idx:end_idx]["question"]
-            pos_answers = ds[start_idx:end_idx]["answer_matching_behavior"]
-            neg_answers = ds[start_idx:end_idx]["answer_not_matching_behavior"]
+            questions = ds[0:i]["question"]
+            pos_answers = ds[0:i]["answer_matching_behavior"]
+            neg_answers = ds[0:i]["answer_not_matching_behavior"]
 
             pos_prompts, neg_prompts = add_special_tokens(questions, pos_answers, neg_answers)
 
             sv = compute_sv(pos_prompts, neg_prompts, tokenizer, model)
 
-            write_steering_vectors_to_json(model_name_short, behavior, f"{decile[0]}-{decile[1]}", sv)
+            write_steering_vectors_to_json(model_name_short, behavior, f"{i}", sv)
