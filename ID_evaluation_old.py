@@ -18,7 +18,8 @@ else:
 SV_DIR = "caa_sv"  # directory containing steering vectors
 # BEHAVIORS = ["agreeableness", "conscientiousness", "extraversion", "openness", "neuroticism", "politically-liberal"]  # example behavior for benchmark and steering vectors file
 # BEHAVIORS = ["extraversion", "openness", "neuroticism", "politically-liberal"]  # example behavior for benchmark and steering vectors file
-BEHAVIORS = ["power-seeking-inclination", "self-awareness-general-ai", "corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
+# BEHAVIORS = ["power-seeking-inclination", "self-awareness-general-ai", "corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
+BEHAVIORS = ["corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
 STEERING_VECTORS = [2, 4, 6, 8, 10] # contains stop decile index, assuming starting from 1 i.e. 1: 0-0.1, 6: 0-0.6
 STEERING_STRENGTHS = [-1, 1]
 MAX_NEW_TOKENS = 5 #dont change

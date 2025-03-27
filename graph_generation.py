@@ -74,7 +74,7 @@ def fibonacci_sequence(n):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("-t", "--target", type=str, required=True, choices=["layers", "strengths", "mmlu", "fib-strengths"], help="target to plot for")
-    parser.add_argument("-m", "--model", type=str, required=True, choices=["Llama-3-8B-Instruct", "Llama-3.1-70B-Instruct"], help="model to plot for")
+    parser.add_argument("-m", "--model", type=str, required=True, choices=["Llama-3-8B-Instruct", "Llama-3-70B-Instruct"], help="model to plot for")
     args = parser.parse_args()
 
     if args.target == "layers":
@@ -104,11 +104,12 @@ if __name__ == "__main__":
         aa_proxy = mlines.Line2D([], [], color="gray", linestyle='dashed',
                                 markersize=8, label="ActAdd")
         handles = [pos_proxy, neg_proxy, aa_proxy]
+
         plt.plot()
-        plt.xlabel("Layer")
-        plt.ylabel("Change in Matching Behavior (%)")
-        plt.title(f'Change in Matching Behavior via Layer Applied')
-        plt.legend(handles=handles)
+        plt.xlabel("Layer", fontsize=12)
+        plt.ylabel("Change in Matching Behavior (%)", fontsize=12)
+        plt.title(f'Change in Matching Behavior vs. Layer Applied', fontsize=16)
+        plt.legend(handles=handles, fontsize=12)
         plt.grid(True)
         plt.tight_layout()
         plt.savefig(f"{args.target}-vs-split-{args.model}-CAA.png")
@@ -138,7 +139,7 @@ if __name__ == "__main__":
         plt.plot()
         plt.xlabel("Strength")
         plt.ylabel("Change in Matching Behavior (%)")
-        plt.title(f'Change in Matching Behavior via Strength Applied')
+        plt.title(f'Change in Matching Behavior vs. Strength Applied')
         plt.legend(handles=handles)
         plt.grid(True)
         plt.tight_layout()
