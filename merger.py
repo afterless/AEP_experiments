@@ -53,7 +53,7 @@ def merge_mmlu_results(model_name: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-m", "--model", type=str, required=True, choices=["Llama-3-8B-Instruct", "Llama-3.1-70B-Instruct"], help="model to plot for")
+    parser.add_argument("-m", "--model", type=str, required=True, choices=["Llama-3-8B-Instruct", "Llama-3-70B-Instruct"], help="model to plot for")
     parser.add_argument("-r", "--results", type=str, required=True, choices=["strengths", "mmlu"], help="results to aggregate")
     parser.add_argument("-d", "--dir", type=str, required=True, help="directory to output results to")
     args = parser.parse_args()

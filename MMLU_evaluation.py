@@ -136,20 +136,20 @@ if __name__ == "__main__":
 
     behaviors=[
         ["agreeableness"],
-        # ["conscientiousness"],
-        # ["corrigible-neutral-HHH"],
-        # ["extraversion"],
-        # ["neuroticism"],
-        # ["openness"],
-        # ["politically-liberal"],
-        # ["power-seeking-inclination"]
-        # ["self-awareness-general-ai"]
+        ["conscientiousness"],
+        ["corrigible-neutral-HHH"],
+        ["extraversion"],
+        ["neuroticism"],
+        ["openness"],
+        ["politically-liberal"],
+        ["power-seeking-inclination"],
+        ["self-awareness-general-ai"]
     ]
     ranges = [slice(i, i+2) for i in range(0, 10, 2)]
     strengths = [[i, i+2] for i in range(-10, 9, 4)] + [[10]]
 
     executor = submitit.AutoExecutor(folder="logs", slurm_max_num_timeout=3)
-    executor.update_parameters(timeout_min=240, slurm_gres="gpu:H200:4", cpus_per_task=32, slurm_mem_per_cpu="4G")
+    executor.update_parameters(timeout_min=120, slurm_gres="gpu:H200:2", cpus_per_task=32, slurm_mem_per_cpu="4G")
     with executor.batch():
         for b, r, s in product(behaviors, ranges, strengths):
             evaluator = NetworkEvaluator(args.model, args.dir, args.vector_path, b, r, s)
