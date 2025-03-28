@@ -33,7 +33,6 @@ def load_ID_eval_results(target: Literal["layers", "strengths", "fib-strength"],
                     for i in list(steer_dic.keys())[1:]:
                         result_dic[i]["s"] = torch.tensor(list(steer_dic[i].values()))[:, layer_idx]
             yield re.search(r'(?:ActAdd|CAA)-(.+?)\.json', file.name).group(1), result_dic
- 
 
     for file in files:
         with open(file, "r") as f:
