@@ -10,24 +10,22 @@ from datasets import load_dataset
 
 # SETTINGS - START
 model_name = "meta-llama/Meta-Llama-3-70B-Instruct"
-SAFETY = True
+SAFETY = False
 if SAFETY:
     data_dir = "advanced-ai-risk/lm_generated_evals"  # used for benchmark dataset
 else:
     data_dir = "persona"
 SV_DIR = "caa_sv"  # directory containing steering vectors
-# BEHAVIORS = ["agreeableness", "conscientiousness", "extraversion", "openness", "neuroticism", "politically-liberal"]  # example behavior for benchmark and steering vectors file
-# BEHAVIORS = ["extraversion", "openness", "neuroticism", "politically-liberal"]  # example behavior for benchmark and steering vectors file
+BEHAVIORS = ["agreeableness", "conscientiousness", "extraversion", "openness", "neuroticism", "politically-liberal"]  # example behavior for benchmark and steering vectors file
 # BEHAVIORS = ["power-seeking-inclination", "self-awareness-general-ai", "corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
-BEHAVIORS = ["corrigible-neutral-HHH"]  # example behavior for benchmark and steering vectors file
 STEERING_VECTORS = [2, 4, 6, 8, 10] # contains stop decile index, assuming starting from 1 i.e. 1: 0-0.1, 6: 0-0.6
-STEERING_STRENGTHS = [-1, 1]
+STEERING_STRENGTHS = [-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10]
 MAX_NEW_TOKENS = 5 #dont change
 FORMAT_PROMPT = True #dont do false lol, model will be in the wrong 'mode' and think before answering or do other stuff
 NUM_PROC = 16
 MODE = "A/B" if SAFETY else "Y/N" # "Y/N" or "A/B"
 OUT_DIR = "ID_eval_results" # output directory
-EVAL_TARGET = 'layers'
+EVAL_TARGET = 'strengths'
 
 # Load model and tokenizer
 model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map="balanced_low_0")
@@ -35,7 +33,7 @@ tokenizer = AutoTokenizer.from_pretrained(model_name)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.pad_token_id = tokenizer.eos_token_id
 tokenizer.padding_side = "left"
-TAG = "CAA" #for output file naming
+TAG = "CAA" #for output file naming"
 
 # SETTINGS - END
 
@@ -144,7 +142,7 @@ def main():
                 num_layers = steering_tensor.shape[0]
                 
                 # Evaluate model for each steering layer modification
-                for i in range(0, num_layers, 2):
+                for i in range(28, 29):
                     # Register hook at corresponding layer.
                     # Note: steering_tensor was computed from layers[1:], so real layer index is (i+1).
                     layer_idx = i + 1  
@@ -160,23 +158,22 @@ def main():
                     layer_indices.append(layer_idx)
                     layer_scores.append(steer_score - baseline)
                     
-                key = "pos" if strength == 1 else "neg"
-                result_sv[key] = layer_scores
+                result_sv[strength] = layer_scores
                 
             # Plot results
-            if sv == 10:
-                plt.figure(figsize=(8, 5))
-                plt.plot(layer_indices, result_sv["pos"], marker='o', color='blue', label="Positive")
-                plt.plot(layer_indices, result_sv["neg"], marker='o', color='red', label="Negative")
-                plt.plot()
-                plt.xlabel("Layer Steered")
-                plt.ylabel("Change in Matching Behavior (%)")
-                plt.title("Change in Answer Matching Behavior via Steering by Layer")
-                plt.legend()
-                plt.grid(True)
-                plt.tight_layout()
-                plt.savefig(f"layers-vs-{behavior}-{TAG}.png")
-                plt.show()
+            # if sv == 10:
+            #     plt.figure(figsize=(8, 5))
+            #     plt.plot(layer_indices, result_sv["pos"], marker='o', color='blue', label="Positive")
+            #     plt.plot(layer_indices, result_sv["neg"], marker='o', color='red', label="Negative")
+            #     plt.plot()
+            #     plt.xlabel("Layer Steered")
+            #     plt.ylabel("Change in Matching Behavior (%)")
+            #     plt.title("Change in Answer Matching Behavior via Steering by Layer")
+            #     plt.legend()
+            #     plt.grid(True)
+            #     plt.tight_layout()
+            #     plt.savefig(f"layers-vs-{behavior}-{TAG}.png")
+            #     plt.show()
                 
             results[sv] = result_sv
 
