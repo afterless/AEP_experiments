@@ -229,7 +229,7 @@ if __name__ == "__main__":
             plt.xlabel("Strength", fontsize=12)
             plt.ylabel("Change in Matching Behavior (%)", fontsize=12)
             plt.title(f'Change in Matching Behavior vs. Strength Applied', fontsize=16)
-            plt.legend(handles=handles)
+            plt.legend(handles=handles, fontsize=12)
             plt.grid(True)
             plt.tight_layout()
             plt.savefig(f"{args.target}-vs-split-{args.model}-CAA.png")
